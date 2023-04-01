@@ -1,1 +1,1 @@
-# Merge_images_to_sequences
+# Merge images to sequences
