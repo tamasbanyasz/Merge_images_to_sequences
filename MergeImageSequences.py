@@ -1,59 +1,79 @@
 from tkinter import Listbox, Scrollbar, RIGHT, Y, END
 from collections import defaultdict
-from pandas import Series, concat
 from itertools import groupby
 import customtkinter as ctk
 from PIL import Image
 import os.path
 
 
-# User input example: C:\Users\Mások\Pictures\Saved Pictures
+# User input example: C:\Users\Others\Pictures\Saved Pictures
 
 
 class LoadImages:
     def __init__(self):
         self.path = None
-        self.df = Series(dtype='str')  # images in Series
-        self.name_of_the_selected_sequence = None  # selected image sequence
+        self.df = None  # temporary images
+        self.name_of_the_selected_sequence = None  # temporary selected image sequence
         self.extensions = set()  # set for the different types of extension
 
     def user_path_is_valid(self, user_path):  # check path is valid
         self.path = ''.join(user_path.rstrip())  # store the path
         return os.path.exists(self.path)  # return True if valid the path
 
+    def in_file_name_any_whitespace(self, splitted_images, image, merged_sequences):
+        if ' ' in splitted_images:
+            lenght_of_the_counter = len(splitted_images[-1])  # lenght of the counters
+
+            image_without_counter = splitted_images[:-1]  # take off the counters from end of the images
+            merged_sequences[f'{image_without_counter}{"#" * lenght_of_the_counter}.{image[-3:]}'].append(
+                image)  # append merged sequences to the dictionary
+
+    def digit_end_of_the_file_name(self, splitted_images, image, merged_sequences):
+        if splitted_images[-1].isdigit():
+            lenght_of_the_counter = len(splitted_images[-1])
+
+            image_without_counter = splitted_images[:-1]
+
+            # reunite the splitted names
+            new_images_without_counter = ''.join(image_without_counter).replace(" ", "_")
+
+            merged_sequences[f'{new_images_without_counter}{"#" * lenght_of_the_counter}.{image[-3:]}'].append(
+                image)
+
+    def end_of_the_file_name_is_not_digit(self, splitted_images, image, merged_sequences_without_counter):
+        if not splitted_images[-1].isdigit():
+            merged_sequences_without_counter[f'{splitted_images[-1]}.{image[-3:]}'].append(image)
+
     def merge_sequences(self, user_path):
         if self.user_path_is_valid(user_path):  # if the path valid
 
-            images = os.listdir(self.path)  # load images from the folder
-
             extensions = (".jpg", ".png", ".bmp")  # image extensions examples
 
-            merged_sequences = defaultdict(list)  # a dictionary to storing the merged images by image names
+            folder = os.listdir(self.path)  # load folder
+
+            images = [image for image in folder if image.endswith(extensions)]  # select only images
+
+            merged_sequences = defaultdict(list)  # a dictionary to storing the merged images by image names with counter
+            merged_sequences_without_counter = defaultdict(list)  # a dictionary to storing the merged images by image names without counter
 
             for image in images:
-                if image.endswith(extensions):  # search for images only
-                    self.extensions.add(image[image.rfind(  # store the extensions
+                self.extensions.add(image[image.rfind(  # store the extensions
                         "."):])
-                    # take off the extensions from end of the images, and if there is any whitespace replace to '_'
-                    image_without_extension = image[:image.rfind(
-                        ".")]
+                # take off the extensions from end of the images, and if there is any whitespace replace to '_'
+                image_without_extension = image[:image.rfind(".")]
 
-                    # split the name where be found digit
-                    splitted_images = ["".join(x) for _, x in groupby(image_without_extension,
-                                                                      key=str.isdigit)]
+                # split the name where be found digit
+                splitted_images = ["".join(x) for _, x in groupby(image_without_extension, key=str.isdigit)]
 
-                    lenght_of_the_counter = len(splitted_images[-1])  # lenght of the counters
+                self.in_file_name_any_whitespace(splitted_images, image, merged_sequences)
 
-                    image_without_counter = splitted_images[:-1]  # take off the counters from end of the images
+                self.digit_end_of_the_file_name(splitted_images, image, merged_sequences)
 
-                    # reunite the splitted names
-                    new_images_without_counter = ''.join(image_without_counter).replace(" ",
-                                                                                        "_")
+                self.end_of_the_file_name_is_not_digit(splitted_images, image, merged_sequences_without_counter)
 
-                    merged_sequences[f'{new_images_without_counter}{"#" * lenght_of_the_counter}.{image[-3:]}'].append(
-                        image)  # append merged sequences to the dictionary
+            image_sequences = {**merged_sequences, **merged_sequences_without_counter}  # merge the dictionaries
 
-            return merged_sequences
+            return image_sequences
 
     def open_images(self, list_of_images):  # open images one by one
         for index, image in enumerate(list_of_images):
@@ -63,7 +83,8 @@ class LoadImages:
 
     def show_images(self):
         if self.name_of_the_selected_sequence:  # if had a selected image sequence
-            list_of_images = eval(self.df[self.name_of_the_selected_sequence])  # put to a list all merged images
+            list_of_images = self.df[self.name_of_the_selected_sequence]  # put to a list all merged images
+            print(self.name_of_the_selected_sequence)
             self.open_images(list_of_images)
 
 
@@ -72,17 +93,16 @@ class InsertToListbox(LoadImages):
         super().__init__()
         self.listbox = listbox
 
-    def get_folder_content_into_df_series(self, user_path):  # get the images from the choosed folder to a Series
-        # store the merged sequences in Series
-        self.df = concat([self.df, Series(self.merge_sequences(user_path), dtype='str')])
+    def get_folder_content(self, user_path):  # get the images from the choosed folder
+        self.df = self.merge_sequences(user_path)  # store the merged sequences
 
     def insert_items_to_listbox_from_df_series(self):  # insert the names of the merged sequences into the listbox
-        if not self.df.empty:  # if we stored the choosed images
-            for image_names in self.df.keys():
-                self.listbox.insert(END, image_names)  # insert items from Series to the listbox
+        if self.df:
+            for image_names, images_in_list in self.df.items():
+                self.listbox.insert(END, image_names)  # insert items from dict to the listbox
 
     def insert_items_into_listbox(self, user_path):  # after pressed the "OK" button
-        self.get_folder_content_into_df_series(user_path)  # store the merged sequences temporary
+        self.get_folder_content(user_path)  # store the merged sequences temporary
         print(self.df)
         print(self.extensions)
         self.insert_items_to_listbox_from_df_series()  # insert the items to listbox
@@ -92,7 +112,7 @@ class InsertToListbox(LoadImages):
             if image_names.endswith(extension):
                 self.listbox.insert(END, image_names)
 
-    def select_all_images_from_combobox(self, extension):  # display all sequences from combobox value 'All'
+    def select_all_images_from_combobox(self, extension):  # display all sequences from combobox by value 'All'
         if extension == 'all':
             self.listbox.delete(0, END)
             self.insert_items_to_listbox_from_df_series()
@@ -110,7 +130,6 @@ class InsertToListbox(LoadImages):
 
 class SetInterface:
     def __init__(self, listbox, combobox):
-        super().__init__()
         self.listbox = InsertToListbox(listbox)
         self.combobox = combobox
 
@@ -120,7 +139,7 @@ class SetInterface:
 
     def clear_listbox_and_clear_selected_images(self):  # clear the temporary stored datas if we give a new folder path
         self.listbox.listbox.delete(0, END)  # delete all displayed name from listbox
-        self.listbox.df = Series(dtype='str')  # create empty Series to the next datas
+        self.listbox.df = None  # create empty variable to the next image sequences
         self.listbox.name_of_the_selected_sequence = None  # create new empty variable to the selected sequence name
 
     def put_in_sort_the_extensions(self):
